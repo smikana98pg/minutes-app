@@ -1,69 +1,68 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import Link from 'next/link';
 
-export default function Home() {
+import { STATUS_LABEL, formatBytes, formatDateTime, formatDuration } from '@/lib/format';
+import { MODE_LABEL } from '@/lib/types';
+import { listMeetings } from '@/lib/server/store';
+
+import { DeleteMeetingButton } from './delete-meeting-button';
+import { NewMeetingButton } from './new-meeting-button';
+import styles from './page.module.css';
+
+// 会議は録音のたびに増えるので、一覧は常に最新をディスクから読む
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
+  const meetings = await listMeetings();
+  // 音声はすぐ嵩むので、消し時が分かるよう合計を出しておく
+  const totalAudio = meetings.reduce((n, m) => n + m.audioBytes, 0);
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main>
+      <header className={styles.header}>
+        <div>
+          <h1>議事録</h1>
+          <p className={styles.sub}>
+            会議の音声から議事録を自動生成します
+            {totalAudio > 0 && (
+              <>
+                <br />
+                音声が {formatBytes(totalAudio)} 分たまっています。議事録が出た会議は、
+                会議ページから音声だけ消せます。
+              </>
+            )}
           </p>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        <NewMeetingButton />
+      </header>
+
+      {meetings.length === 0 ? (
+        <p className={styles.empty}>
+          まだ会議がありません。「新しい会議」から録音を始めてください。
+        </p>
+      ) : (
+        <ul className={styles.list}>
+          {meetings.map((m) => (
+            <li key={m.id} className={styles.row}>
+              <Link href={`/meetings/${m.id}`} className={styles.item}>
+                <span className={styles.title}>{m.title}</span>
+                <span className={styles.meta}>
+                  {formatDateTime(m.startedAt)}
+                  {` ・ ${MODE_LABEL[m.mode]}`}
+                  {m.durationSec > 0 && ` ・ ${formatDuration(m.durationSec)}`}
+                  {m.audioBytes > 0 && ` ・ 音声 ${formatBytes(m.audioBytes)}`}
+                </span>
+                <span className={styles.status} data-status={m.status}>
+                  {STATUS_LABEL[m.status]}
+                </span>
+              </Link>
+              {/* Link の内側に置くとクリックが競合するので兄弟に並べる */}
+              <div className={styles.rowActions}>
+                <DeleteMeetingButton id={m.id} after="refresh" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
   );
 }

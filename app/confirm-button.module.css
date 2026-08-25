@@ -1,0 +1,32 @@
+.trigger {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+}
+.trigger:hover { color: var(--danger); border-color: var(--border); }
+
+.confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.question {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.confirm button {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+}
+
+.danger {
+  background: var(--danger);
+  border-color: transparent;
+  color: var(--bg);
+  font-weight: 600;
+}

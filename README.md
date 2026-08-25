@@ -1,36 +1,135 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 議事録アプリ
 
-## Getting Started
+会議中にブラウザで立ち上げておき、終了ボタンを押すと会議の内容から議事録が生成されるローカル専用ツール。
 
-First, run the development server:
+要約・決定事項・ToDo（担当者・期限つき）を自動で抽出する。**運用コストはゼロ**で、外部への従量課金は一切発生しない。
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 仕組み
+
+```
+マイク ─┐
+        ├→ AudioWorklet で 16kHz mono PCM にミックス → 30秒ごとにサーバーへ追記
+タブ音声┘                                                      ↓ 会議を終了
+                                              WAV 化 → whisper.cpp（ローカル・無料）
+                                                              ↓
+                                              claude -p（Claude Code の定額枠）
+                                                              ↓
+                                                        minutes.md
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+文字起こしはこのマシンの中だけで完結する。議事録の生成だけが Claude を使うが、
+Anthropic API の従量課金ではなく **Claude Code CLI の定額枠**を `claude -p` 経由で使うため、追加費用はかからない。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 必要なもの
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- macOS（Apple Silicon 推奨）と **Chrome**（タブ音声のキャプチャは Chrome 系のみ。Safari では動かない）
+- Node.js 20 以上 / pnpm
+- `whisper-cpp` … `brew install whisper-cpp`
+- ログイン済みの Claude Code CLI … `claude` にパスが通っていること
 
-## Learn More
+## セットアップ
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm install
+./scripts/fetch-model.sh          # whisper のモデルを取得（約 550MB）
+cp .env.example .env.local        # CLAUDE_BIN のパスを自分の環境に合わせる
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`http://localhost:3000` を Chrome で開く。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`.env.local` で変えられるもの:
 
-## Deploy on Vercel
+| 変数 | 既定値 | 備考 |
+| --- | --- | --- |
+| `WHISPER_MODEL` | `./models/ggml-large-v3-turbo-q5_0.bin` | 速度優先なら `./scripts/fetch-model.sh small` で取得した `ggml-small.bin` に |
+| `WHISPER_THREADS` | `6` | |
+| `CLAUDE_MODEL` | `opus` | `sonnet` にすると速くなる |
+| `DATA_DIR` | `./data` | 会議データの保存先 |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 使い方
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+「新しい会議」を押したあと、録音の準備画面で**オンライン会議か対面会議かを選ぶ**。
+どちらを選ぶかで音声の取得経路もマイクの設定も変わる。
+
+### オンライン会議
+
+1. 会議のタブ（Google Meet、Zoom Web 版など）を先に開いておく。
+2. 「オンライン会議」を選んで録音を開始する。
+3. 共有ダイアログで**「タブ」を選び、「タブの音声も共有」にチェック**する。
+   これが相手の声を残す唯一の経路で、ここを飛ばすと自分の声しか記録されない。
+
+マイクの `echoCancellation` は有効にしてある。スピーカーから出る相手の声がマイクに回り込むと、
+タブ音声側と合わせて同じ発言が二重に文字起こしされるため。
+
+### 対面会議
+
+1. 「対面会議」を選ぶ。**画面共有は不要**で、マイクの許可だけで始まる。
+2. 外部マイクがある場合はここで選べる（無ければシステムの既定を使う）。
+3. 端末を**テーブルの中央に、話す人の方へ向けて**置く。内蔵マイクが拾えるのは 1〜2m 程度。
+4. 録音中のレベルメーターで、**奥の席の人が話したときに振れているか**を最初に確かめる。
+
+対面では `echoCancellation` と `noiseSuppression` を**切ってある**。どちらも近接した1人の通話を
+前提にした補正で、部屋全体を1本で拾う用途では離れた席の小さな声ごと削ってしまうため。
+`autoGainControl` だけは残してあり、奥の声を持ち上げる。
+
+議事録の生成時にも「1本のマイクで録った対面会議で、話者は区別されていない」という前提を
+Claude に伝えるので、担当者が読み取れない ToDo は無理に埋めずに未定として出る。
+
+### 共通
+
+会議が終わったら「会議を終了して議事録を作成」。
+
+処理時間の目安は、1 時間の会議で文字起こしが約 8 分（M1 実測）、議事録の生成が 30 秒ほど。
+ページは閉じてしまっても処理は続く。
+
+## 録音がうまくいっているか確かめる
+
+いちばん壊れやすいのはタブ音声のキャプチャで、失敗しても「自分の声しか入っていない」という
+静かな形で現れる。会議を終了する前に確認できる。
+
+```bash
+./scripts/preview.sh          # 最新の会議
+./scripts/preview.sh <会議ID>  # 指定した会議
+```
+
+その時点までの音声を wav にして再生アプリで開き、平均音量も表示する。
+`mean_volume` が -90dB 付近なら実質無音で、マイクもタブ音声も拾えていない。
+
+## データの置き場所
+
+会議ごとに `data/meetings/<id>/` へ書き出す。DB は使っていない。
+
+| ファイル | 内容 |
+| --- | --- |
+| `meta.json` | タイトル・状態・時刻・長さ |
+| `audio.pcm` / `audio.wav` | 収録した音声（1 時間で約 115MB） |
+| `transcript.json` / `transcript.md` | 文字起こし（タイムスタンプつき） |
+| `minutes.json` / `minutes.md` | 議事録 |
+
+`data/` と `models/` は Git 管理外。
+
+### 消し方は2通り
+
+1 時間の会議は音声だけで約 230MB（`audio.pcm` と `audio.wav`）を使う。
+議事録が出てしまえば音声を持ち続ける理由はほとんどないので、片方だけ消せるようにしてある。
+
+| 操作 | 消えるもの | 場所 |
+| --- | --- | --- |
+| **音声を削除** | `audio.pcm` / `audio.wav` のみ。議事録と文字起こしは残る | 会議ページ下部（完了後のみ） |
+| **会議を削除** | ディレクトリごと全部 | 一覧の各行（ポインタを乗せると出る）／会議ページ下部 |
+
+どちらも元に戻せない。溜まっている音声の合計は一覧の上部に出る。
+
+音声を消したあとの会議は文字起こしをやり直せない（エラーで終わった会議の「再実行」も使えなくなる）ため、
+議事録の内容に納得してから消すこと。
+
+## 制約と注意
+
+- **Chrome 専用。** `getDisplayMedia` での音声取得に対応しているのが Chrome 系だけのため。
+- **Zoom / Teams のデスクトップアプリの音声は取れない。** macOS ではブラウザからシステム音声を拾えない。
+  ブラウザ版で会議に参加するか、BlackHole のような仮想オーディオデバイスを挟む必要がある。
+- **`claude -p` は Claude Code の定額枠のレート制限（5 時間ウィンドウ）を消費する。**
+  1 日数件なら問題にならないが、連続して大量に回す使い方には向かない。
+- **話者の識別はしない。** マイクとタブ音声を 1 本にミックスしているため。
+  分けたい場合は 2 系統を別々に文字起こしすれば「自分 / 相手」の区別は付けられる（未実装）。
