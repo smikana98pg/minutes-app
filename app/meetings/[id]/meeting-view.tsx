@@ -13,6 +13,9 @@ import styles from './meeting.module.css';
 
 const POLL_INTERVAL_MS = 2000;
 
+/** 選んだマイクを次回も使うための保存先。 */
+const MIC_STORAGE_KEY = 'minutes-app:audio-input';
+
 export function MeetingView({ initial }: { initial: MeetingDetail }) {
   const [detail, setDetail] = useState(initial);
   const [title, setTitle] = useState(initial.title);
@@ -203,20 +206,47 @@ function Idle({
   const [mode, setMode] = useState<MeetingMode>('online');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string>('');
+  const [asking, setAsking] = useState(false);
 
-  async function chooseMode(next: MeetingMode) {
-    setMode(next);
-    if (next !== 'inperson' || devices.length > 0) return;
+  const loadDevices = useCallback(async () => {
+    const list = await listAudioInputs();
+    setDevices(list);
+    return list;
+  }, []);
 
-    // マイクの名前は許可を出したあとにしか入らない。
-    // 対面ではどのマイクで録るかが音質を決めるので、ここで一度許可を取って一覧を作る。
+  useEffect(() => {
+    void (async () => {
+      const list = await loadDevices();
+      // 前回選んだマイクを復元する。外されていたら既定に戻す。
+      const saved = localStorage.getItem(MIC_STORAGE_KEY);
+      if (saved && list.some((d) => d.deviceId === saved)) setDeviceId(saved);
+    })();
+
+    // iPhone の接続やヘッドセットの抜き差しで一覧は変わる
+    const onChange = () => void loadDevices();
+    navigator.mediaDevices.addEventListener('devicechange', onChange);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', onChange);
+  }, [loadDevices]);
+
+  // ラベルは許可を出したあとにしか入らないので、名前が無いうちは選ばせようがない
+  const needsPermission = devices.length === 0 || devices.every((d) => !d.label);
+
+  async function askPermission() {
+    setAsking(true);
     try {
       const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
       probe.getTracks().forEach((t) => t.stop());
-      setDevices(await listAudioInputs());
+      await loadDevices();
     } catch {
       // 拒否されても既定のマイクで録音は試みられるので、ここでは何もしない
+    } finally {
+      setAsking(false);
     }
+  }
+
+  function chooseDevice(next: string) {
+    setDeviceId(next);
+    localStorage.setItem(MIC_STORAGE_KEY, next);
   }
 
   return (
@@ -227,7 +257,7 @@ function Idle({
         <button
           className={styles.mode}
           data-active={mode === 'online'}
-          onClick={() => chooseMode('online')}
+          onClick={() => setMode('online')}
         >
           <span className={styles.modeTitle}>オンライン会議</span>
           <span className={styles.modeDesc}>
@@ -237,7 +267,7 @@ function Idle({
         <button
           className={styles.mode}
           data-active={mode === 'inperson'}
-          onClick={() => chooseMode('inperson')}
+          onClick={() => setMode('inperson')}
         >
           <span className={styles.modeTitle}>対面会議</span>
           <span className={styles.modeDesc}>
@@ -268,14 +298,27 @@ function Idle({
               奥の席の人が話したときに振れているか、最初に確かめてください。
             </li>
           </ol>
+        </>
+      )}
 
-          {devices.length > 1 && (
+      <div className={styles.micPicker}>
+        {needsPermission ? (
+          <>
+            <button onClick={() => void askPermission()} disabled={asking || busy}>
+              {asking ? '確認中…' : '使うマイクを選ぶ'}
+            </button>
+            <p className={styles.hint}>
+              マイクの許可を一度出すと、ここで使うマイクを指定できるようになります。
+            </p>
+          </>
+        ) : (
+          <>
             <label className={styles.label}>
               マイク
               <select
                 className={styles.select}
                 value={deviceId}
-                onChange={(e) => setDeviceId(e.target.value)}
+                onChange={(e) => chooseDevice(e.target.value)}
               >
                 <option value="">システムの既定</option>
                 {devices.map((d) => (
@@ -285,9 +328,14 @@ function Idle({
                 ))}
               </select>
             </label>
-          )}
-        </>
-      )}
+            <p className={styles.hint}>
+              「システムの既定」のままだと、iPhone が近くにあるときに macOS が
+              iPhone のマイクを選ぶことがあります。Mac のマイクをここで指定すれば固定されます。
+              選んだマイクはこのブラウザに保存され、次回もそのまま使われます。
+            </p>
+          </>
+        )}
+      </div>
 
       <button
         className="primary"

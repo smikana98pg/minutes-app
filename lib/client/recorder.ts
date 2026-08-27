@@ -20,7 +20,7 @@ export type StartResult = {
 
 export type StartOptions = {
   mode: MeetingMode;
-  /** 対面会議で使うマイク。未指定ならシステムの既定。 */
+  /** 使うマイク。未指定ならシステムの既定。 */
   deviceId?: string;
 };
 
@@ -49,15 +49,24 @@ export async function listAudioInputs(): Promise<MediaDeviceInfo[]> {
  * - autoGainControl だけは残す。テーブルの奥の声を持ち上げてくれる
  */
 function audioConstraints(options: StartOptions): MediaTrackConstraints {
+  // 未指定だとブラウザのシステム既定になる。macOS は iPhone が近くにあると
+  // 連係のマイクを既定にしてしまうので、選ばれたマイクは exact で固定する。
+  const device = options.deviceId ? { deviceId: { exact: options.deviceId } } : {};
+
   if (options.mode === 'inperson') {
     return {
-      ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
+      ...device,
       echoCancellation: false,
       noiseSuppression: false,
       autoGainControl: true,
     };
   }
-  return { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  return {
+    ...device,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
 }
 
 function floatToInt16(samples: Float32Array): Int16Array {
