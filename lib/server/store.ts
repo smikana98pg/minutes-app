@@ -20,6 +20,8 @@ export const files = {
   transcriptMd: (id: string) => path.join(meetingDir(id), 'transcript.md'),
   minutesJson: (id: string) => path.join(meetingDir(id), 'minutes.json'),
   minutesMd: (id: string) => path.join(meetingDir(id), 'minutes.md'),
+  /** 自動生成ではなく、あとから人が書き足すメモ。 */
+  notesMd: (id: string) => path.join(meetingDir(id), 'notes.md'),
 };
 
 /** id にパス区切りなどが混ざっていないことを保証する（ディレクトリ traversal 対策）。 */
@@ -157,12 +159,14 @@ async function readIfExists(p: string): Promise<string | null> {
 /** 会議詳細画面向けに meta と成果物をまとめて返す。 */
 export async function readMeetingDetail(id: string): Promise<MeetingDetail> {
   const meta = await readMeta(id);
-  const [minutesRaw, minutesMarkdown, transcriptMarkdown, bytes] = await Promise.all([
-    readIfExists(files.minutesJson(id)),
-    readIfExists(files.minutesMd(id)),
-    readIfExists(files.transcriptMd(id)),
-    audioBytes(id),
-  ]);
+  const [minutesRaw, minutesMarkdown, transcriptMarkdown, notesMarkdown, bytes] =
+    await Promise.all([
+      readIfExists(files.minutesJson(id)),
+      readIfExists(files.minutesMd(id)),
+      readIfExists(files.transcriptMd(id)),
+      readIfExists(files.notesMd(id)),
+      audioBytes(id),
+    ]);
 
   let minutes: Minutes | null = null;
   if (minutesRaw) {
@@ -173,5 +177,12 @@ export async function readMeetingDetail(id: string): Promise<MeetingDetail> {
     }
   }
 
-  return { ...meta, minutes, minutesMarkdown, transcriptMarkdown, audioBytes: bytes };
+  return {
+    ...meta,
+    minutes,
+    minutesMarkdown,
+    transcriptMarkdown,
+    notesMarkdown,
+    audioBytes: bytes,
+  };
 }

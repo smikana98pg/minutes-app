@@ -69,6 +69,8 @@ export type MeetingDetail = MeetingMeta & {
   minutes: Minutes | null;
   minutesMarkdown: string | null;
   transcriptMarkdown: string | null;
+  /** 会議ディレクトリに手で置いた notes.md。無ければ null。 */
+  notesMarkdown: string | null;
   /** audio.pcm と audio.wav の合計バイト数。0 なら音声は削除済み。 */
   audioBytes: number;
 };

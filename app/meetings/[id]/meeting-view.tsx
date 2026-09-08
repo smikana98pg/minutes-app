@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { DeleteAudioButton } from '@/app/delete-audio-button';
 import { DeleteMeetingButton } from '@/app/delete-meeting-button';
@@ -520,6 +520,15 @@ function Done({ detail }: { detail: MeetingDetail }) {
         </>
       )}
 
+      {detail.notesMarkdown && (
+        <>
+          <h2>メモ</h2>
+          <div className={styles.notes}>
+            <Markdown source={detail.notesMarkdown} />
+          </div>
+        </>
+      )}
+
       {detail.transcriptMarkdown && (
         <details className={styles.details}>
           <summary>文字起こし全文</summary>
@@ -527,5 +536,61 @@ function Done({ detail }: { detail: MeetingDetail }) {
         </details>
       )}
     </section>
+  );
+}
+
+/**
+ * notes.md を表示するための最小の Markdown 描画。
+ * 手書きのメモで使う見出し・箇条書き・強調だけを解釈し、
+ * それ以外の記法は素のテキストとして出す。
+ */
+function Markdown({ source }: { source: string }) {
+  const blocks: ReactNode[] = [];
+  let list: string[] = [];
+
+  function flushList() {
+    if (list.length === 0) return;
+    const items = list;
+    list = [];
+    blocks.push(
+      <ul key={`ul-${blocks.length}`}>
+        {items.map((item, i) => (
+          <li key={i}>{inline(item)}</li>
+        ))}
+      </ul>,
+    );
+  }
+
+  for (const line of source.split('\n')) {
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    const bullet = /^[-*]\s+(.*)$/.exec(line);
+
+    if (heading) {
+      flushList();
+      const [, hashes, text] = heading;
+      const Tag = (['h1', 'h2', 'h3'] as const)[hashes.length - 1];
+      blocks.push(<Tag key={blocks.length}>{inline(text)}</Tag>);
+    } else if (bullet) {
+      list.push(bullet[1]);
+    } else if (line.trim() === '') {
+      flushList();
+    } else {
+      flushList();
+      blocks.push(<p key={blocks.length}>{inline(line)}</p>);
+    }
+  }
+  flushList();
+
+  return <>{blocks}</>;
+}
+
+/** **強調** だけを解釈する。 */
+function inline(text: string): ReactNode {
+  return text.split(/(\*\*[^*]+\*\*)/).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') ? (
+      <strong key={i}>{part.slice(2, -2)}</strong>
+    ) : (
+      part
+    ),
   );
 }

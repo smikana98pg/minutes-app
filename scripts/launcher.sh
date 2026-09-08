@@ -11,7 +11,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${MINUTES_PORT:-3000}"
 URL="http://localhost:$PORT"
 LOG="$ROOT/data/server.log"
-CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 cd "$ROOT" || exit 1
 mkdir -p "$(dirname "$LOG")"
@@ -35,10 +34,16 @@ fi
 
 alive || fail "サーバーが起動しませんでした。data/server.log を見てください。"
 
-# 🚨 --user-data-dir は外せない。
-# 普段の Chrome が動いていると --app は既存インスタンスへ転送され、
-# ウィンドウの種類を指定した引数は捨てられてしまう（何も開かない）。
-# 専用プロファイルで独立したインスタンスとして起動して初めて app ウィンドウになる。
-"$CHROME" --app="$URL" \
-  --user-data-dir="$ROOT/data/chrome-profile" \
-  --no-first-run --no-default-browser-check >/dev/null 2>&1 &
+# 🚨 --user-data-dir や --app で別インスタンスの Chrome を立ててはいけない。
+# 画面共有ダイアログに出るのは「同じ Chrome インスタンスのタブ」だけなので、
+# 別インスタンスで開くと会議のタブを選べず、相手の声が録れなくなる。
+# 単独ウィンドウが欲しい場合は、普段の Chrome に PWA としてインストールする
+# （アドレスバー右の インストール）。作られた .app があればそれを開く。
+# zsh は一致しない glob をエラーにするので、探索は find に任せる
+PWA="$(find "$HOME/Applications" -maxdepth 2 -name '議事録.app' -path '*Chrome Apps*' -print -quit 2>/dev/null)"
+
+if [ -n "$PWA" ]; then
+  open "$PWA"
+else
+  open -a "Google Chrome" "$URL"
+fi

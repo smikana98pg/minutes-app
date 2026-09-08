@@ -24,15 +24,21 @@ export async function runPipeline(id: string): Promise<void> {
   try {
     const meta = await readMeta(id);
 
-    // 1. 生 PCM に WAV ヘッダを付ける
+    // 1. 生 PCM に WAV ヘッダを付け、whisper が扱える音量まで揃える
     await updateMeta(id, { status: 'transcribing' });
-    const durationSec = await pcmToWav(files.pcm(id), files.wav(id));
+    const { durationSec, rmsDbfs, gainDb } = await pcmToWav(files.pcm(id), files.wav(id));
     await updateMeta(id, { durationSec });
 
     // 2. ローカルの whisper.cpp で文字起こし
     const segments = await transcribe(files.wav(id));
     if (segments.length === 0) {
-      throw new Error('音声から発話を検出できませんでした');
+      // 何も録れていないのか、録れてはいるが小さすぎるのかで対処が変わるので
+      // 実測した音量をそのまま出す。-60dBFS を下回るならマイクを疑う。
+      throw new Error(
+        `音声から発話を検出できませんでした（録音レベル ${rmsDbfs.toFixed(1)}dBFS` +
+          `${gainDb >= 1 ? `／+${gainDb.toFixed(1)}dB 増幅後` : ''}）。` +
+          'マイクが会議の音を拾えていない可能性があります。',
+      );
     }
     await writeFile(files.transcriptMd(id), `${segmentsToMarkdown(segments)}\n`);
 
