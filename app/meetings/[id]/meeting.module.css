@@ -204,3 +204,9 @@
 }
 
 .micPicker { margin: 1.5rem 0; }
+
+.qa { margin: 0; }
+.qa > div { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+.qa > div:last-child { border-bottom: none; }
+.qa dt { font-weight: 600; }
+.qa dd { margin: 0.25rem 0 0; }

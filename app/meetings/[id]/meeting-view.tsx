@@ -7,7 +7,12 @@ import { DeleteAudioButton } from '@/app/delete-audio-button';
 import { DeleteMeetingButton } from '@/app/delete-meeting-button';
 import { STATUS_LABEL, formatDateTime, formatDuration } from '@/lib/format';
 import { MeetingRecorder, listAudioInputs } from '@/lib/client/recorder';
-import { MODE_LABEL, type MeetingDetail, type MeetingMode } from '@/lib/types';
+import {
+  recordingLabel,
+  type MeetingDetail,
+  type MeetingKind,
+  type MeetingMode,
+} from '@/lib/types';
 
 import styles from './meeting.module.css';
 
@@ -59,7 +64,7 @@ export function MeetingView({ initial }: { initial: MeetingDetail }) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [recorder]);
 
-  async function startRecording(mode: MeetingMode, deviceId?: string) {
+  async function startRecording(mode: MeetingMode, kind: MeetingKind, deviceId?: string) {
     setBusy(true);
     setNotice(null);
     try {
@@ -75,13 +80,13 @@ export function MeetingView({ initial }: { initial: MeetingDetail }) {
       );
       startedAt.current = Date.now();
       setRecorder(rec);
-      setDetail((d) => ({ ...d, mode }));
+      setDetail((d) => ({ ...d, mode, kind }));
 
-      // どちらのモードで録ったかは議事録の生成時にも効くので記録しておく
+      // どちらのモード・種類で録ったかは議事録の生成時にも効くので記録しておく
       void fetch(`/api/meetings/${detail.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, kind }),
       });
 
       if (mode === 'online' && !hasTabAudio) {
@@ -148,6 +153,7 @@ export function MeetingView({ initial }: { initial: MeetingDetail }) {
       {detail.status === 'recording' && recorder && (
         <Recording
           mode={detail.mode}
+          kind={detail.kind}
           title={title}
           onTitleChange={setTitle}
           elapsed={elapsed}
@@ -201,9 +207,10 @@ function Idle({
   onStart,
 }: {
   busy: boolean;
-  onStart: (mode: MeetingMode, deviceId?: string) => void;
+  onStart: (mode: MeetingMode, kind: MeetingKind, deviceId?: string) => void;
 }) {
   const [mode, setMode] = useState<MeetingMode>('online');
+  const [kind, setKind] = useState<MeetingKind>('meeting');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string>('');
   const [asking, setAsking] = useState(false);
@@ -252,6 +259,29 @@ function Idle({
   return (
     <section>
       <h1>録音の準備</h1>
+
+      <div className={styles.modes} role="group" aria-label="録音する場の種類">
+        <button
+          className={styles.mode}
+          data-active={kind === 'meeting'}
+          onClick={() => setKind('meeting')}
+        >
+          <span className={styles.modeTitle}>会議</span>
+          <span className={styles.modeDesc}>
+            要約・決定事項・ToDo・未解決の論点をまとめます
+          </span>
+        </button>
+        <button
+          className={styles.mode}
+          data-active={kind === 'interview'}
+          onClick={() => setKind('interview')}
+        >
+          <span className={styles.modeTitle}>面接</span>
+          <span className={styles.modeDesc}>
+            要約・決定事項・QA（質問と回答）・ToDo をまとめます
+          </span>
+        </button>
+      </div>
 
       <div className={styles.modes} role="group" aria-label="会議のとり方">
         <button
@@ -339,10 +369,10 @@ function Idle({
 
       <button
         className="primary"
-        onClick={() => onStart(mode, deviceId || undefined)}
+        onClick={() => onStart(mode, kind, deviceId || undefined)}
         disabled={busy}
       >
-        {busy ? '開始中…' : `${MODE_LABEL[mode]}の録音を開始`}
+        {busy ? '開始中…' : `${recordingLabel(kind, mode)}の録音を開始`}
       </button>
       <p className={styles.hint}>
         音声はこのマシンの中だけで処理されます（文字起こしはローカルの Whisper）。
@@ -353,6 +383,7 @@ function Idle({
 
 function Recording({
   mode,
+  kind,
   title,
   onTitleChange,
   elapsed,
@@ -361,6 +392,7 @@ function Recording({
   onFinish,
 }: {
   mode: MeetingMode;
+  kind: MeetingKind;
   title: string;
   onTitleChange: (v: string) => void;
   elapsed: number;
@@ -373,7 +405,7 @@ function Recording({
       <div className={styles.recordingHead}>
         <span className={styles.dot} aria-hidden />
         <span className={styles.elapsed}>{formatDuration(elapsed)}</span>
-        <span className={styles.recordingLabel}>録音中 ・ {MODE_LABEL[mode]}</span>
+        <span className={styles.recordingLabel}>録音中 ・ {recordingLabel(kind, mode)}</span>
       </div>
 
       <div className={styles.meter} role="img" aria-label="入力レベル">
@@ -450,7 +482,7 @@ function Done({ detail }: { detail: MeetingDetail }) {
     <section>
       <h1>{detail.title}</h1>
       <p className={styles.sub}>
-        {formatDateTime(detail.startedAt)} ・ {MODE_LABEL[detail.mode]} ・{' '}
+        {formatDateTime(detail.startedAt)} ・ {recordingLabel(detail.kind, detail.mode)} ・{' '}
         {formatDuration(detail.durationSec)}
       </p>
 
@@ -476,6 +508,24 @@ function Done({ detail }: { detail: MeetingDetail }) {
                 </li>
               ))}
             </ul>
+          )}
+
+          {(detail.kind === 'interview' || detail.minutes.qa) && (
+            <>
+              <h2>QA</h2>
+              {(detail.minutes.qa ?? []).length === 0 ? (
+                <p className={styles.hint}>なし</p>
+              ) : (
+                <dl className={styles.qa}>
+                  {detail.minutes.qa?.map((x, i) => (
+                    <div key={i}>
+                      <dt>Q. {x.q}</dt>
+                      <dd>A. {x.a}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </>
           )}
 
           <h2>ToDo</h2>

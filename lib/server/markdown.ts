@@ -26,6 +26,19 @@ export function minutesToMarkdown(minutes: Minutes, meta: MeetingMeta): string {
     }
   }
 
+  // 面接は「要約 → 決定事項 → QA → ToDo」の順に並べる
+  if (meta.kind === 'interview' || minutes.qa) {
+    lines.push('', '## QA', '');
+    const qa = minutes.qa ?? [];
+    if (qa.length === 0) {
+      lines.push('（なし）');
+    } else {
+      for (const { q, a } of qa) {
+        lines.push(`- Q. ${q}`, `  - A. ${a}`);
+      }
+    }
+  }
+
   lines.push('', '## ToDo', '');
 
   if (minutes.todos.length === 0) {

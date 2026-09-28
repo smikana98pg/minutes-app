@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 import { STATUS_LABEL, formatBytes, formatDateTime, formatDuration } from '@/lib/format';
-import { MODE_LABEL } from '@/lib/types';
+import { recordingLabel } from '@/lib/types';
 import { listMeetings } from '@/lib/server/store';
 
 import { DeleteMeetingButton } from './delete-meeting-button';
@@ -47,7 +47,7 @@ export default async function HomePage() {
                 <span className={styles.title}>{m.title}</span>
                 <span className={styles.meta}>
                   {formatDateTime(m.startedAt)}
-                  {` ・ ${MODE_LABEL[m.mode]}`}
+                  {` ・ ${recordingLabel(m.kind, m.mode)}`}
                   {m.durationSec > 0 && ` ・ ${formatDuration(m.durationSec)}`}
                   {m.audioBytes > 0 && ` ・ 音声 ${formatBytes(m.audioBytes)}`}
                 </span>

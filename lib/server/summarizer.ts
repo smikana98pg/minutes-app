@@ -48,6 +48,41 @@ const SYSTEM_PROMPT = `あなたは会議の文字起こしから議事録を生
 - 文字起こしに書かれていない事実を創作しない。曖昧な点は openQuestions に入れる。
 - すべて日本語で記述する。`;
 
+/** 面接用。要約・決定事項・QA・TODO の4部構成にする。 */
+const INTERVIEW_SYSTEM_PROMPT = `あなたは面接の文字起こしから面接記録を生成する専用ツールです。出力は JSON のみです。
+
+## 出力スキーマ
+
+以下のキーだけを持つ JSON オブジェクトを1つ出力します。**スキーマに無いキーを追加してはいけません。**
+
+{
+  "title": string,            // 面接の内容を表す簡潔な題名（例: 「〇〇社 一次面接」）
+  "summary": string,          // 面接全体の要約。3〜6文の日本語の文章
+  "decisions": [              // 面接の場で決まったこと（次回日程、合否連絡の時期、提出物など）。なければ空配列
+    { "text": string, "context": string }
+  ],
+  "qa": [                     // 面接での質問と回答。話された順に並べる
+    { "q": string, "a": string }
+  ],
+  "todos": [                  // 面接後にやること。なければ空配列
+    { "task": string, "assignee": string | null, "due": string | null }
+  ]
+}
+
+## 規則
+
+- 出力は上記の JSON オブジェクト1つだけ。前後に説明文を書かない。
+- \`qa\` には面接官からの質問だけでなく、応募者からの逆質問とその回答も含める。
+- \`qa[].q\` は質問を1文の疑問文に整える（例: 「前職の退職理由は？」）。
+- \`qa[].a\` は回答の要点を簡潔にまとめる（例: 「成長できる環境ではなかったから」）。言い淀みや繰り返しは除く。
+- 回答が聞き取れない・話されていない質問は、\`a\` に「（回答不明）」と書く。
+- \`decisions[].context\` は、その決定に至った背景を1文で。不要なら空文字列。
+- \`todos[].assignee\` は文字起こしに担当者が明示されている場合のみ名前を入れ、無ければ null。
+- \`todos[].due\` は与えられた面接日を基準に相対表現を解決し \`YYYY-MM-DD\` 形式にする。判断できなければ null。
+- 文字起こしは音声認識の出力なので同音異義語の誤りを含む。文脈から明らかな誤変換は正しい語に直して記述する。
+- 文字起こしに書かれていない事実を創作しない。
+- すべて日本語で記述する。`;
+
 function buildPrompt(transcript: string, meta: MeetingMeta, retry: boolean): string {
   const started = new Date(meta.startedAt);
   const weekday = '日月火水木金土'[started.getDay()];
@@ -56,19 +91,20 @@ function buildPrompt(transcript: string, meta: MeetingMeta, retry: boolean): str
   const mins = Math.round(meta.durationSec / 60);
 
   // 録り方によって文字起こしの性質が違うので、読み方の前提を渡す
+  const place = meta.kind === 'interview' ? '面接' : '会議';
   const nature =
     meta.mode === 'inperson'
       ? [
-          '- 収録: 対面会議を1本のマイクで収録',
+          `- 収録: 対面の${place}を1本のマイクで収録`,
           '',
           'この文字起こしは話者が区別されておらず、複数人の発言が連続して並んでいます。',
           '誰の発言かは文脈から推測し、確信が持てない担当者は null にしてください。',
           'マイクから遠い席の発言は認識精度が落ちている可能性があります。',
         ]
-      : ['- 収録: オンライン会議（マイクとタブ音声を合成）'];
+      : [`- 収録: オンラインの${place}（マイクとタブ音声を合成）`];
 
   return [
-    '# 会議情報',
+    `# ${place}情報`,
     '',
     `- タイトル: ${meta.title}`,
     `- 日時: ${date} (${weekday}) ${time}`,
@@ -81,7 +117,7 @@ function buildPrompt(transcript: string, meta: MeetingMeta, retry: boolean): str
     '',
     '# 指示',
     '',
-    '上記の文字起こしから議事録を作成し、スキーマどおりの JSON のみを出力してください。',
+    `上記の文字起こしから${meta.kind === 'interview' ? '面接記録' : '議事録'}を作成し、スキーマどおりの JSON のみを出力してください。`,
     ...(retry
       ? [
           '',
@@ -99,7 +135,7 @@ type CliEnvelope = {
   result?: string;
 };
 
-async function runClaude(prompt: string): Promise<string> {
+async function runClaude(prompt: string, systemPrompt: string): Promise<string> {
   // プロジェクトの CLAUDE.md が自動で読み込まれてプロンプトに混ざらないよう、
   // 空のディレクトリを cwd にして実行する。
   // なお --bare は使えない。認証が ANTHROPIC_API_KEY 限定になり OAuth を読まなくなるため、
@@ -112,7 +148,7 @@ async function runClaude(prompt: string): Promise<string> {
       '-p',
       '--output-format', 'json',
       '--model', config.claudeModel,
-      '--system-prompt', SYSTEM_PROMPT,
+      '--system-prompt', systemPrompt,
       '--disallowed-tools', 'Bash,Read,Write,Edit,WebSearch,WebFetch,Glob,Grep,Task,TodoWrite',
     ],
     { cwd, stdio: ['pipe', 'pipe', 'pipe'] },
@@ -183,6 +219,16 @@ function normalize(parsed: unknown): Minutes | null {
           })
           .filter((d) => d.text.length > 0)
       : [],
+    ...(Array.isArray(o.qa)
+      ? {
+          qa: o.qa
+            .map((x) => {
+              const r = x as Record<string, unknown>;
+              return { q: str(r?.q), a: str(r?.a) };
+            })
+            .filter((x) => x.q.length > 0),
+        }
+      : {}),
     todos: Array.isArray(o.todos)
       ? o.todos
           .map((t) => {
@@ -204,11 +250,12 @@ function normalize(parsed: unknown): Minutes | null {
 export class ClaudeCliSummarizer implements Summarizer {
   async generate(transcript: string, meta: MeetingMeta): Promise<SummarizeResult> {
     let lastRaw = '';
+    const systemPrompt = meta.kind === 'interview' ? INTERVIEW_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     // CLI 経由には structured outputs のような保証がないので、
     // パースに失敗したら1回だけ「JSON だけを返せ」と添えて再試行する。
     for (const retry of [false, true]) {
-      lastRaw = await runClaude(buildPrompt(transcript, meta, retry));
+      lastRaw = await runClaude(buildPrompt(transcript, meta, retry), systemPrompt);
       try {
         const minutes = normalize(JSON.parse(extractJson(lastRaw)));
         if (minutes) return { ok: true, minutes };

@@ -18,10 +18,22 @@ export const MODE_LABEL: Record<MeetingMode, string> = {
   inperson: '対面会議',
 };
 
+/**
+ * 何の場か。議事録の構成が変わる（面接は QA を立てる）。録り方の mode とは独立。
+ */
+export type MeetingKind = 'meeting' | 'interview';
+
+/** 一覧や見出しに出す「オンライン会議」「対面面接」などの呼び名。 */
+export function recordingLabel(kind: MeetingKind, mode: MeetingMode): string {
+  if (kind === 'interview') return mode === 'online' ? 'オンライン面接' : '対面面接';
+  return MODE_LABEL[mode];
+}
+
 export type MeetingMeta = {
   id: string;
   title: string;
   mode: MeetingMode;
+  kind: MeetingKind;
   status: MeetingStatus;
   startedAt: string;
   endedAt: string | null;
@@ -44,11 +56,19 @@ export type Decision = {
   context?: string;
 };
 
+/** 面接でのやり取り 1 往復。 */
+export type QA = {
+  q: string;
+  a: string;
+};
+
 /** claude -p に生成させる議事録の構造。 */
 export type Minutes = {
   title: string;
   summary: string;
   decisions: Decision[];
+  /** 面接のときだけ入る。会議の議事録には無い。 */
+  qa?: QA[];
   todos: Todo[];
   openQuestions: string[];
 };

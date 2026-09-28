@@ -38,6 +38,7 @@ export async function createMeeting(title?: string): Promise<MeetingMeta> {
     title: title?.trim() || '無題の会議',
     // 実際のモードは録音開始時に確定する（PATCH で上書きされる）
     mode: 'online',
+    kind: 'meeting',
     status: 'recording',
     startedAt: new Date().toISOString(),
     endedAt: null,
@@ -53,8 +54,8 @@ export async function createMeeting(title?: string): Promise<MeetingMeta> {
 export async function readMeta(id: string): Promise<MeetingMeta> {
   assertSafeId(id);
   const meta = JSON.parse(await readFile(files.meta(id), 'utf8')) as MeetingMeta;
-  // mode を導入する前に録った会議はすべてオンライン会議だった
-  return { ...meta, mode: meta.mode ?? 'online' };
+  // mode・kind を導入する前に録ったものはすべてオンラインの会議だった
+  return { ...meta, mode: meta.mode ?? 'online', kind: meta.kind ?? 'meeting' };
 }
 
 export async function writeMeta(meta: MeetingMeta): Promise<void> {
