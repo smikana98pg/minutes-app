@@ -1,4 +1,4 @@
-import { deleteMeeting, readMeetingDetail, updateMeta } from '@/lib/server/store';
+import { FolderError, deleteMeeting, moveMeeting, readMeetingDetail, updateMeta } from '@/lib/server/store';
 import type { MeetingKind, MeetingMeta, MeetingMode } from '@/lib/types';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -12,14 +12,28 @@ export async function GET(_request: Request, { params }: Ctx) {
   }
 }
 
-/** 録音開始時のモード・種類の確定と、録音中のタイトル変更に使う。 */
+/** 録音開始時のモード・種類の確定、録音中のタイトル変更、フォルダの移動に使う。 */
 export async function PATCH(request: Request, { params }: Ctx) {
   const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as {
     title?: string;
     mode?: MeetingMode;
     kind?: MeetingKind;
+    folderId?: string | null;
   };
+
+  // フォルダの移動は存在確認が要るので、他の項目とは別に扱う
+  if (body.folderId !== undefined) {
+    if (body.folderId !== null && typeof body.folderId !== 'string') {
+      return Response.json({ error: 'folderId は文字列か null です' }, { status: 400 });
+    }
+    try {
+      return Response.json(await moveMeeting(id, body.folderId));
+    } catch (e) {
+      if (e instanceof FolderError) return Response.json({ error: e.message }, { status: e.status });
+      return Response.json({ error: '会議が見つかりません' }, { status: 404 });
+    }
+  }
 
   const patch: Partial<MeetingMeta> = {};
   if (typeof body.title === 'string') patch.title = body.title.trim() || '無題の会議';

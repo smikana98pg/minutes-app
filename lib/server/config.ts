@@ -19,6 +19,7 @@ function resolve(p: string): string {
 export const config = {
   whisperBin: env('WHISPER_BIN', '/opt/homebrew/bin/whisper-cli'),
   whisperModel: resolve(env('WHISPER_MODEL', './models/ggml-large-v3-turbo-q5_0.bin')),
+  whisperVadModel: resolve(env('WHISPER_VAD_MODEL', './models/ggml-silero-v5.1.2.bin')),
   whisperThreads: env('WHISPER_THREADS', '6'),
   claudeBin: env('CLAUDE_BIN', 'claude'),
   claudeModel: env('CLAUDE_MODEL', 'opus'),
@@ -26,4 +27,5 @@ export const config = {
 };
 
 export const meetingsDir = path.join(config.dataDir, 'meetings');
+export const foldersFile = path.join(config.dataDir, 'folders.json');
 export const meetingDir = (id: string) => path.join(meetingsDir, id);

@@ -8,21 +8,30 @@
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PORT="${MINUTES_PORT:-3000}"
-URL="http://localhost:$PORT"
 LOG="$ROOT/data/server.log"
 
 cd "$ROOT" || exit 1
 mkdir -p "$(dirname "$LOG")"
+source "$ROOT/scripts/port.sh"
 
 fail() {
   osascript -e "display alert \"議事録を起動できませんでした\" message \"$1\"" >/dev/null
   exit 1
 }
 
-alive() { curl -sf -o /dev/null --max-time 1 "$URL"; }
+# 既に動いていればそれを使う。無ければ空いているポートで起こす
+if PORT="$(find_running_port)"; then
+  STARTED=false
+else
+  PORT="$(find_free_port)" ||
+    fail "ポート $PORT_CANDIDATES がすべて他のアプリに使われています。"
+  STARTED=true
+fi
+URL="http://localhost:$PORT"
 
-if ! alive; then
+alive() { is_minutes "$PORT"; }
+
+if $STARTED; then
   # 初回だけビルドが要る。1 分ほどかかる。
   [ -d .next ] || pnpm build >>"$LOG" 2>&1 || fail "ビルドに失敗しました。data/server.log を見てください。"
   nohup pnpm start -p "$PORT" >>"$LOG" 2>&1 &
@@ -42,7 +51,9 @@ alive || fail "サーバーが起動しませんでした。data/server.log を�
 # zsh は一致しない glob をエラーにするので、探索は find に任せる
 PWA="$(find "$HOME/Applications" -maxdepth 2 -name '議事録.app' -path '*Chrome Apps*' -print -quit 2>/dev/null)"
 
-if [ -n "$PWA" ]; then
+# PWA はインストールしたときの URL（localhost:3000）を開く。
+# 別のポートで起こした回は PWA だと他のアプリが開いてしまうので、URL を直接開く。
+if [ -n "$PWA" ] && [ "$PORT" = 3000 ]; then
   open "$PWA"
 else
   open -a "Google Chrome" "$URL"

@@ -43,6 +43,15 @@ export type MeetingMeta = {
   error: string | null;
   /** 議事録が JSON としてパースできず生テキストで保存された場合に立つ。 */
   rawFallback?: boolean;
+  /** 入っているフォルダ。未分類なら無し（null）。フォルダ導入前の会議にはキー自体が無い。 */
+  folderId?: string | null;
+};
+
+/** 会議をまとめるフォルダ（「A社」「B社」など）。入れ子にはしない。 */
+export type Folder = {
+  id: string;
+  name: string;
+  createdAt: string;
 };
 
 export type Todo = {

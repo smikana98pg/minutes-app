@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { MeetingDetail, MeetingListItem, MeetingMeta, Minutes } from '@/lib/types';
+import type { Folder, MeetingDetail, MeetingListItem, MeetingMeta, Minutes } from '@/lib/types';
 
-import { meetingDir, meetingsDir } from './config';
+import { foldersFile, meetingDir, meetingsDir } from './config';
 import { pcmDurationSec } from './wav';
 
 /**
@@ -186,4 +186,89 @@ export async function readMeetingDetail(id: string): Promise<MeetingDetail> {
     notesMarkdown,
     audioBytes: bytes,
   };
+}
+
+/*
+ * フォルダは一覧を 1 ファイルで持ち、会議側は meta.json の folderId で指すだけにする。
+ * 会議のディレクトリを動かさないので、URL も既存のデータもそのまま使える。
+ */
+
+/** フォルダ名の上限。タブに並べるので長すぎると崩れる。 */
+const FOLDER_NAME_MAX = 40;
+
+export class FolderError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 404 | 409,
+  ) {
+    super(message);
+  }
+}
+
+export async function listFolders(): Promise<Folder[]> {
+  try {
+    return JSON.parse(await readFile(foldersFile, 'utf8')) as Folder[];
+  } catch {
+    return []; // まだ 1 つも作っていない状態
+  }
+}
+
+async function writeFolders(folders: Folder[]): Promise<void> {
+  await mkdir(path.dirname(foldersFile), { recursive: true });
+  await writeFile(foldersFile, JSON.stringify(folders, null, 2));
+}
+
+/** 名前を整えて検証する。同じ名前のフォルダが 2 つあると、移動先を選ぶときに区別できない。 */
+function validateFolderName(name: unknown, folders: Folder[], selfId?: string): string {
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (!trimmed) throw new FolderError('フォルダ名を入力してください', 400);
+  if (trimmed.length > FOLDER_NAME_MAX) {
+    throw new FolderError(`フォルダ名は ${FOLDER_NAME_MAX} 文字以内にしてください`, 400);
+  }
+  if (folders.some((f) => f.name === trimmed && f.id !== selfId)) {
+    throw new FolderError(`「${trimmed}」は既にあります`, 409);
+  }
+  return trimmed;
+}
+
+export async function createFolder(name: unknown): Promise<Folder> {
+  const folders = await listFolders();
+  const folder: Folder = {
+    id: randomUUID().slice(0, 8),
+    name: validateFolderName(name, folders),
+    createdAt: new Date().toISOString(),
+  };
+  await writeFolders([...folders, folder]);
+  return folder;
+}
+
+export async function renameFolder(id: string, name: unknown): Promise<Folder> {
+  const folders = await listFolders();
+  const target = folders.find((f) => f.id === id);
+  if (!target) throw new FolderError('フォルダが見つかりません', 404);
+
+  const renamed = { ...target, name: validateFolderName(name, folders, id) };
+  await writeFolders(folders.map((f) => (f.id === id ? renamed : f)));
+  return renamed;
+}
+
+/** フォルダだけを消す。中の会議は消さずに未分類へ戻す。 */
+export async function deleteFolder(id: string): Promise<void> {
+  const folders = await listFolders();
+  if (!folders.some((f) => f.id === id)) throw new FolderError('フォルダが見つかりません', 404);
+
+  // 先に会議側を外す。途中で落ちても「空のフォルダが残る」だけで済む
+  const meetings = await listMeetings();
+  await Promise.all(
+    meetings.filter((m) => m.folderId === id).map((m) => updateMeta(m.id, { folderId: null })),
+  );
+  await writeFolders(folders.filter((f) => f.id !== id));
+}
+
+/** 会議をフォルダに入れる。null なら未分類に戻す。 */
+export async function moveMeeting(id: string, folderId: string | null): Promise<MeetingMeta> {
+  if (folderId !== null && !(await listFolders()).some((f) => f.id === folderId)) {
+    throw new FolderError('フォルダが見つかりません', 404);
+  }
+  return updateMeta(id, { folderId });
 }

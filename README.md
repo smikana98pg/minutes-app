@@ -31,7 +31,7 @@ Anthropic API の従量課金ではなく **Claude Code CLI の定額枠**を `c
 
 ```bash
 pnpm install
-./scripts/fetch-model.sh          # whisper のモデルを取得（約 550MB）
+./scripts/fetch-model.sh          # whisper と VAD のモデルを取得（約 550MB）
 cp .env.example .env.local        # CLAUDE_BIN のパスを自分の環境に合わせる
 pnpm dev
 ```
@@ -72,10 +72,19 @@ pnpm build
 `scripts/launcher.sh` はそれがあれば優先して開くので、Launchpad の「議事録」から
 サーバー起動 → アプリウィンドウまで一息で通る。
 
+### ポート
+
+`3000` が他のアプリに使われていれば `3001`、それも埋まっていれば `3002` で起こす。
+議事録アプリが既にどれかで動いていれば、新しく起こさずにそれを開く（`scripts/port.sh`）。
+
+- PWA は `localhost:3000` に紐づくため、`3001`・`3002` で起こした回は PWA ではなく Chrome のタブで開く
+- マイクの選択はポートごとに保存されるので、初めてのポートでは選び直しになる
+- 起点のポートは `MINUTES_PORT` で変えられる（例: `MINUTES_PORT=4000` なら 4000〜4002）
+
 | やりたいこと | やり方 |
 | --- | --- |
 | 開く | Launchpad / Spotlight で「議事録」 |
-| 止める | `./scripts/stop.sh` |
+| 止める | `./scripts/stop.sh`（3000〜3002 から議事録アプリだけを探して止める） |
 | コードを変えたあと | `pnpm build`（アプリは作り直さなくてよい） |
 | 起動の仕方を変えたい | `scripts/launcher.sh` を直す（同じくアプリは作り直さなくてよい） |
 | 起動しないとき | `data/server.log` を見る |
@@ -88,6 +97,7 @@ pnpm build
 | 変数 | 既定値 | 備考 |
 | --- | --- | --- |
 | `WHISPER_MODEL` | `./models/ggml-large-v3-turbo-q5_0.bin` | 速度優先なら `./scripts/fetch-model.sh small` で取得した `ggml-small.bin` に |
+| `WHISPER_VAD_MODEL` | `./models/ggml-silero-v5.1.2.bin` | 発話区間の検出に使う。無いと文字起こしが失敗する |
 | `WHISPER_THREADS` | `6` | |
 | `CLAUDE_MODEL` | `opus` | `sonnet` にすると速くなる |
 | `DATA_DIR` | `./data` | 会議データの保存先 |
@@ -149,6 +159,14 @@ Claude に伝えるので、担当者が読み取れない ToDo は無理に埋�
 処理時間の目安は、1 時間の会議で文字起こしが約 8 分（M1 実測）、議事録の生成が 30 秒ほど。
 ページは閉じてしまっても処理は続く。
 
+### フォルダで分ける
+
+一覧の上の「＋ フォルダ」で、「A社」「B社」のようなフォルダを作れる（入れ子にはできない）。
+会議は一覧の各行にポインタを乗せると出る「フォルダ」の選択で移す。1 つの会議が入るフォルダは 1 つだけ。
+
+- タブでフォルダを切り替えると、その中の会議だけが並ぶ。どこにも入れていない会議は「未分類」
+- フォルダを選んでいるときは、名前の変更と削除ができる。**フォルダを消しても中の会議は消えず、未分類に戻る**
+
 ## 録音がうまくいっているか確かめる
 
 いちばん壊れやすいのはタブ音声のキャプチャで、失敗しても「自分の声しか入っていない」という
@@ -176,6 +194,9 @@ Claude に伝えるので、担当者が読み取れない ToDo は無理に埋�
 | `audio.pcm` / `audio.wav` | 収録した音声（1 時間で約 115MB） |
 | `transcript.json` / `transcript.md` | 文字起こし（タイムスタンプつき） |
 | `minutes.json` / `minutes.md` | 議事録 |
+
+フォルダの一覧は `data/folders.json` に置き、各会議の `meta.json` の `folderId` で指す。
+会議のディレクトリはフォルダを移しても動かない（URL が変わらない）。
 
 `data/` と `models/` は Git 管理外。
 

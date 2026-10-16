@@ -1,0 +1,76 @@
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.tab:hover { border-color: var(--muted); }
+.tab[data-active] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
+.count {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.add {
+  border-style: dashed;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.form input { flex: 1 1 14rem; width: auto; }
+.form button { flex-shrink: 0; }
+
+.error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.folderActions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ConfirmButton の trigger と見た目を揃える */
+.subtle {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+}
+.subtle:hover { border-color: var(--border); }

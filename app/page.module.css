@@ -61,6 +61,17 @@
 .row:hover .rowActions,
 .rowActions:focus-within { opacity: 1; }
 
+.rowActions select {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.5rem;
+  max-width: 10rem;
+}
+
 .item {
   display: grid;
   grid-template-columns: 1fr auto;

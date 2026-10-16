@@ -49,6 +49,13 @@ type WhisperJson = {
  *
  * M1 の実測で 31 秒の音声が約 8 秒（うちモデル読み込み約 4 秒）だったので、
  * 1 時間の会議はおおむね 8 分前後かかる。タイムアウトは余裕を持って 2 時間。
+ *
+ * VAD は必須。無しで先頭から通すと、冒頭の待機時間などで一度
+ * 「ご視聴ありがとうございました」と誤認識した後、明瞭な会話が始まっても
+ * 30 秒ごとに同じ文を出し続けて抜けられないことがある（実測で 10 分ぶん、
+ * 悪いときは 1 時間丸ごと失った。同じ区間を単独で渡すと全文認識できる）。
+ * -mc 0 で文脈を切っても回復が早まるだけで直らない。
+ * VAD で発話区間だけを渡すと起きなくなり、タイムスタンプは元の音声の時刻で返る。
  */
 export async function transcribe(wavPath: string): Promise<TranscriptSegment[]> {
   // whisper-cli は -of に拡張子なしのパスを取り、自分で .json を足す。
@@ -61,6 +68,8 @@ export async function transcribe(wavPath: string): Promise<TranscriptSegment[]> 
       '-f', wavPath,
       '-l', 'ja',
       '-t', config.whisperThreads,
+      '--vad',
+      '-vm', config.whisperVadModel,
       '-oj',
       '-of', outPrefix,
       '-np', // 認識結果以外を標準出力に出させない

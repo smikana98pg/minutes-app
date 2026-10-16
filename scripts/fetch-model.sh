@@ -10,12 +10,21 @@ MODEL="${1:-large-v3-turbo-q5_0}"
 DEST="$(cd "$(dirname "$0")/.." && pwd)/models/ggml-${MODEL}.bin"
 URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${MODEL}.bin"
 
-if [ -f "$DEST" ]; then
-  echo "既に存在します: $DEST"
-  exit 0
-fi
+# 文字起こしの前に発話区間を切り出す VAD モデル（約 1MB）。どのモデルでも必要。
+VAD_DEST="$(dirname "$DEST")/ggml-silero-v5.1.2.bin"
+VAD_URL="https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
 
-echo "取得中: $URL"
-curl -L --fail --progress-bar -o "$DEST.part" "$URL"
-mv "$DEST.part" "$DEST"
-echo "完了: $DEST ($(du -h "$DEST" | cut -f1))"
+fetch() {
+  local url="$1" dest="$2"
+  if [ -f "$dest" ]; then
+    echo "既に存在します: $dest"
+    return
+  fi
+  echo "取得中: $url"
+  curl -L --fail --progress-bar -o "$dest.part" "$url"
+  mv "$dest.part" "$dest"
+  echo "完了: $dest ($(du -h "$dest" | cut -f1))"
+}
+
+fetch "$URL" "$DEST"
+fetch "$VAD_URL" "$VAD_DEST"
